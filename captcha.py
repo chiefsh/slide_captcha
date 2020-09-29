@@ -6,6 +6,7 @@ import requests
 
 SQUARE_SIZE = 50       # 正方形的边长
 CIRCLE_SIZE = 20       # 圆形的直径
+SHADOW_PEX = 70        # 阴影处理减弱的像素值
 
 # 随机获取半圆出现的方向
 SQUARE_UP_DOWN = ["up", "down"]
@@ -111,8 +112,8 @@ def get_cutout(img):
                 rgb = img.getpixel((i, j))
                 # 更新bg上的像素rgba值
                 bg.putpixel((i, j), rgb)
-                # 修改原图抠图位置的rgba值阴影化
-                img.putpixel((i, j), (rgb[0] - 50, rgb[1] - 50, rgb[2] - 50, 0))
+                # 修改原图抠图位置的rgba值，阴影化
+                img.putpixel((i, j), (rgb[0] - SHADOW_PEX, rgb[1] - SHADOW_PEX, rgb[2] - SHADOW_PEX, 0))
 
     # 扣出小图
     bg = bg.crop((l - CIRCLE_SIZE // 2 - 2, u - CIRCLE_SIZE // 2 - 2, l + SQUARE_SIZE + CIRCLE_SIZE // 2 + 2,
@@ -137,13 +138,14 @@ def get_cutout(img):
     return icon_center, org_buf.getvalue(), bg_buf.getvalue()
 
 
-# 从本地源图片生成远程
+# 从本地源图片生成验证码
 def get_captcha_by_local():
     pil_img = Image.open('snap.png')
     pil_img = pil_img.resize((THUMB[0], THUMB[1]), Image.LANCZOS)
     get_cutout(pil_img.copy())
 
 
+# 从远端源图片生成验证码
 def get_captcha_by_remote_url(url):
     res = requests.get(url)
     if res.status_code != 200:
@@ -157,4 +159,4 @@ def get_captcha_by_remote_url(url):
 
 if __name__ == '__main__':
     # get_captcha()
-    get_captcha_by_remote_url(SOURCE_IMG[0])
+    get_captcha_by_remote_url(SOURCE_IMG[1])
