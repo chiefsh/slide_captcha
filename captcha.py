@@ -4,12 +4,17 @@ from PIL import Image, ImageFilter
 from io import BytesIO
 import requests
 
-SQUARE_SIZE = 50
-CIRCLE_SIZE = 20
+SQUARE_SIZE = 50       # 正方形的边长
+CIRCLE_SIZE = 20       # 圆形的直径
+
+# 随机获取半圆出现的方向
 SQUARE_UP_DOWN = ["up", "down"]
 SQUARE_LEFT_RIGHT = ["left", "right"]
+
+# 验证码图片尺寸
 THUMB = (260, 160)
 
+# 源图远程地址
 SOURCE_IMG = [
     "https://cloudwork.oss-cn-beijing.aliyuncs.com/startup/c2/9c/49c17eac-4f2a-48e8-9804-03dd5370c0ec.png",
     "https://cloudwork.oss-cn-beijing.aliyuncs.com/startup/a7/40/4eb76a26-7f1b-4c1c-99a7-d217fef08fe4.png",
@@ -26,6 +31,7 @@ SOURCE_IMG = [
 logger = logging.getLogger(__name__)
 
 
+# 根据正方形出现的位置（x, y）计算半圆型出现的位置
 def random_circle_location(x, y):
     up_down = random.choice(SQUARE_UP_DOWN)
     mx = x + random.randint(10, SQUARE_SIZE - CIRCLE_SIZE - 5)
@@ -44,6 +50,7 @@ def random_circle_location(x, y):
     return (mx, my, up_down, circle1_center), (nx, ny, left_right, circle2_center)
 
 
+# 检查当前坐标是否在半圆形区域内
 def check_in_circle(circle, i, j, direct):
     x, y, up_down, center = circle
     if direct == "out":
@@ -64,37 +71,41 @@ def check_in_circle(circle, i, j, direct):
             x, y, h, z = x, y, x+CIRCLE_SIZE//2, y+CIRCLE_SIZE
         else:
             x, y, h, z = x, y, x+CIRCLE_SIZE, y+CIRCLE_SIZE//2
+    # 上面的计算是为了进一步减少计算边长的范围
     if x <= i <= h and y <= j <= z:
         a, b = abs(center[0] - i), abs(center[1] - j)
+        # 勾股定理
         if (a**2 + b**2) <= (CIRCLE_SIZE // 2)**2:
             return True
     return False
 
 
 def get_cutout(img):
-    # 获取正方形区域
+    # 获取随机的正方形区域
     width, height = img.size
     l = random.randint(width // 3, width - SQUARE_SIZE - CIRCLE_SIZE)
     u = height // 2
     r, d = l + SQUARE_SIZE, u + SQUARE_SIZE
-    # 确定两个圆形的坐标
-    circles = random_circle_location(l, u)
 
     # 创建空白图
     bg = Image.new("L", (width, height))
+    # 设置图片为RGBA模式
     if bg.mode != "RGBA":
         bg = bg.convert("RGBA")
-
+    # 设置背景透明
     _, _, _, alpha = bg.split()
     alpha = alpha.point(lambda i: i > 0 and 1)
     bg.putalpha(alpha)
 
+    # 确定两个圆形的坐标
+    circles = random_circle_location(l, u)
+    # 随机确定一个为内部圆(缺口)，一个为外部圆(凸出)
     n = random.randint(0, 1)
     for i in range(width):
         for j in range(height):
             # 判断是否在圆形内, n为外部圆 or 判断是否在正方形内
             if check_in_circle(circles[n], i, j, "out") or (l <= i <= r and u <= j <= d):
-                # 内部圆需要做排除
+                # 内部半圆需要做排除
                 if check_in_circle(circles[abs(1 - n)], i, j, "inner"):
                     continue
                 rgb = img.getpixel((i, j))
@@ -103,32 +114,37 @@ def get_cutout(img):
                 # 修改原图抠图位置的rgba值阴影化
                 img.putpixel((i, j), (rgb[0] - 50, rgb[1] - 50, rgb[2] - 50, 0))
 
+    # 扣出小图
     bg = bg.crop((l - CIRCLE_SIZE // 2 - 2, u - CIRCLE_SIZE // 2 - 2, l + SQUARE_SIZE + CIRCLE_SIZE // 2 + 2,
                      u + SQUARE_SIZE + CIRCLE_SIZE // 2 + 2))
 
-    # bg = bg.filter(ImageFilter.BoxBlur)
+    # 模糊处理
     bg = bg.filter(ImageFilter.UnsharpMask)
 
+    # 返回正方形的中心坐标，验证码验证判断的依据
+    icon_center = (l + SQUARE_SIZE // 2, u + SQUARE_SIZE // 2)
+
+    # 保存到本地
     img.save("1.png")
     bg.save("2.png")
 
-    # 转二进制
+    # 返回二进制
     org_buf = BytesIO()
     bg_buf = BytesIO()
     img.save(org_buf, format='PNG')
     bg.save(bg_buf, format='PNG')
 
-    icon_center = (l+SQUARE_SIZE//2, u+SQUARE_SIZE//2)
     return icon_center, org_buf.getvalue(), bg_buf.getvalue()
 
 
-def get_captcha():
+# 从本地源图片生成远程
+def get_captcha_by_local():
     pil_img = Image.open('snap.png')
     pil_img = pil_img.resize((THUMB[0], THUMB[1]), Image.LANCZOS)
     get_cutout(pil_img.copy())
 
 
-def get_captcha_by_url(url):
+def get_captcha_by_remote_url(url):
     res = requests.get(url)
     if res.status_code != 200:
         logger.error("get origin image error:%r", res.text)
@@ -141,4 +157,4 @@ def get_captcha_by_url(url):
 
 if __name__ == '__main__':
     # get_captcha()
-    get_captcha_by_url(SOURCE_IMG[0])
+    get_captcha_by_remote_url(SOURCE_IMG[0])
